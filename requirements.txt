@@ -1,4 +1,4 @@
-Flask
-ujson
-sqlalchemy
-flask_sqlalchemy
+Flask==0.12.2
+ujson==1.35
+SQLAlchemy==1.1.14
+Flask-SQLAlchemy==2.3
