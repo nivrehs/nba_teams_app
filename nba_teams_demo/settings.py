@@ -1,0 +1,3 @@
+SQLALCHEMY_DATABASE_URI='sqlite:///nba_teams.db'
+SQLALCHEMY_TRACK_MODIFICATIONS = False
+DEBUG = True

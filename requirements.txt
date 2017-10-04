@@ -1,0 +1,4 @@
+Flask
+ujson
+sqlalchemy
+flask_sqlalchemy
