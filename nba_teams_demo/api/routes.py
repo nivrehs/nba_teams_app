@@ -1,298 +1,178 @@
 from flask import Blueprint, request
-from sqlalchemy import exc
 import ujson
 
 # Custom Packages Import
-from nba_teams_demo.database import db
-from nba_teams_demo.database.models import Team, Player
+from nba_teams_demo.api.teams import add_team, delete_team, get_all_teams, get_team, update_team
+from nba_teams_demo.api.teams import is_duplicate_team_name, team_exists
+from nba_teams_demo.api.players import get_all_players, get_free_agents, get_player
+from nba_teams_demo.api.players import add_player, delete_player, update_player
+from nba_teams_demo.api.players import is_duplicate_player_name, player_exists
+from nba_teams_demo.api.Constants import Constants
 
 api = Blueprint('api', __name__)
 
 
 @api.route('/')
 def index():
-    return (ujson.dumps({'message': 'This is the homepage for the NBA teams api!'}), 200)
+    return ujson.dumps({'message': 'This is the homepage for the NBA teams api!'}), 200
 
 
-@api.route('/teams', methods=['GET'])
-def get_teams():
-    teams = Team.query.all()
-    response = []
-    if teams:
-        for team in teams:
-            response.append({"id": team.id, "name": team.name})
-    return (ujson.dumps({"teams": response}), 200)
-
-
-@api.route('/team', methods=['POST'])
-def add_team():
-    team_name = request.values.get("team_name", "")
-    status = "Failed"
-    http_code = 400
-
-    if team_name:
-        team_name_exists = Team.query.filter_by(name=team_name).scalar() is not None
-        if team_name_exists:
-            description = "Team %s is already in the database" % team_name
-            http_code = 409
-        else:
-            team = Team(team_name)
-            try:
-                db.session.add(team)
-                db.session.commit()
-                status = "Success"
-                description = "Successfully added %s team" % team_name
-                http_code = 201
-            except exc.SQLAlchemyError as e:
-                db.session().rollback()
-                description = "Team %s was not created due to an error." % team_name
-    else:
-        description = "Team name not provided"
-
-    response = {
-        "status": status,
-        "description": description
-    }
-    return (ujson.dumps(response), http_code)
-
-
-@api.route('/team/<int:id>', methods=['PUT'])
-def update_team(id):
-    team_name = request.values.get("team_name", "")
-    status = "Failed"
-    http_code = 400
-
-    if team_name:
-        # check if team id is valid
-        team_id_exists = Team.query.filter(Team.id == id).scalar() is not None
-        if team_id_exists:
-            # check if team name is already existing in the database
-            is_duplicate_team_name = Team.query.filter(Team.name == team_name). \
-                                         filter(Team.id != id).scalar() is not None
-            if is_duplicate_team_name:
-                description = "Team name %s is already in the database" % team_name
-                http_code = 409
-            else:
-                team = Team.query.filter(Team.id == id).one()
-                team.name = team_name
-                try:
-                    db.session.add(team)
-                    db.session.commit()
-                    status = "Success"
-                    description = "Successfully updated team %s" % id
-                    http_code = 204
-                except exc.SQLAlchemyError as e:
-                    db.session().rollback()
-                    description = "Team %s was not updated due to an error." % id
-        else:
-            description = "Invalid team id."
-    else:
-        description = "Team name not supplied."
-
-    response = {
-        "status": status,
-        "description": description
-    }
-    return (ujson.dumps(response), http_code)
-
-
-@api.route('/team/<int:id>', methods=['DELETE'])
-def delete_team(id):
-    status = "Success"
-    description = "Successfully deleted team %s" % id
-    http_code = 204
-
-    team_id_exists = Team.query.filter(Team.id == id).scalar() is not None
-    if team_id_exists:
-        team = Team.query.filter(Team.id == id).one()
-        try:
-            db.session.delete(team)
-            db.session.commit()
-        except exc.SQLAlchemyError as e:
-            db.session().rollback()
-            status = "Failed"
-            description = "Team %s was not deleted due to an error." % id
-            http_code = 400
-
-    response = {
-        "status": status,
-        "description": description
-    }
-    return (ujson.dumps(response), http_code)
-
-
-@api.route('/team/<int:id>/roster', methods=['GET'])
-def get_team_roster(id):
-    is_team_valid = Team.query.filter(Team.id == id).scalar() is not None
-    if is_team_valid:
-        team = Team.query.filter(Team.id == id).one()
-        players = Player.query.filter(Player.team == team).all()
+@api.route('/teams', methods=['GET', 'POST'])
+def teams():
+    if request.method == 'GET':
+        teams = get_all_teams()
         response = []
-
-        if players:
-            for player in players:
-                response.append({"player_id": player.id, "player_name": player.name})
-        return (ujson.dumps({"%s players" % team.name: response}), 200)
-    else:
-        response = {
-            "status": "Failed",
-            "description": "Invalid Team id"
-        }
-        return (ujson.dumps(response), 400)
-
-
-@api.route('/players', methods=['GET'])
-def get_players():
-    players = Player.query.all()
-    response = []
-
-    if players:
-        teams = {}
-        team_list = Team.query.all()
-        for team in team_list:
-            teams[team.id] = team.name
-
-        for player in players:
-            response.append({"player_id": player.id, "player_name": player.name, "team_name": teams[player.team_id],
-                             "team_id": player.team_id})
-    return (ujson.dumps({"players": response}), 200)
-
-
-@api.route('/player', methods=['POST'])
-def add_player():
-    player_name = request.values.get("player_name", "")
-    team_id = request.values.get("team_id", "")
-    status = "Failed"
-    http_code = 400
-
-    if player_name:
-        if team_id:
-            player_exists = Player.query.filter_by(name=player_name).scalar() is not None
-            if player_exists:
-                description = "Player %s is already in the database" % player_name
-                http_code = 409
+        if teams:
+            for team in teams:
+                response.append({"team_id": team.id, "team_name": team.name})
+        return ujson.dumps({"teams": response}), 200
+    elif request.method == 'POST':
+        team_name = request.values.get("team_name", "")
+        if team_name:
+            if team_exists(team_name=team_name):
+                result = Constants.DUPLICATE_TEAM_NAME
             else:
-                team_exists = Team.query.filter(Team.id == team_id).scalar() is not None
-                if team_exists:
-                    team = Team.query.filter(Team.id == team_id).one()
-                    player = Player(player_name, team)
-                    try:
-                        db.session.add(player)
-                        db.session.commit()
-                        status = "Success",
-                        description = "Successfully added %s to %s" % (player_name, team.name)
-                        http_code = 201
-                    except exc.SQLAlchemyError as e:
-                        db.session().rollback()
-                        description = "Player %s was not added due to an error." % player_name
+                add_result = add_team(team_name)
+                if add_result:
+                    result = Constants.CREATE_TEAM_SUCCESS
                 else:
-                    description = "Invalid Team id"
+                    result = Constants.CREATE_TEAM_FAILED
         else:
-            description = "Team id not provided"
+            result = Constants.TEAM_NAME_NOT_PROVIDED
+
+        return ujson.dumps(result['response']), result['http_code']
+
+
+@api.route('/teams/<int:team_id>', methods=['DELETE', 'GET', 'PUT'])
+def modify_teams(team_id):
+    if request.method == 'PUT':
+        team_name = request.values.get("team_name", "")
+        # check if team id is valid
+        if team_exists(team_id=team_id):
+            if team_name:
+                # check if team name is already existing in the database
+                if is_duplicate_team_name(team_id, team_name):
+                    result = Constants.DUPLICATE_TEAM_NAME
+                else:
+                    update_result = update_team(team_id, team_name)
+                    if update_result:
+                        result = Constants.UPDATE_TEAM_SUCCESS
+                    else:
+                        result = Constants.UPDATE_TEAM_SUCCESS
+            else:
+                result = Constants.NOTHING_TO_UPDATE
+        else:
+            result = Constants.INVALID_TEAM_ID
+        return ujson.dumps(result['response']), result['http_code']
+    elif request.method == 'DELETE':
+        result = Constants.DELETE_TEAM_SUCCESS
+        if team_exists(team_id=team_id):
+            delete_result = delete_team(team_id)
+            if delete_result is None:
+                result = Constants.DELETE_TEAM_FAILED
+        return ujson.dumps(result['response']), result['http_code']
+    elif request.method == 'GET':
+        team = get_team(team_id=team_id)
+        if team:
+            response = {"team_id": team.id, "team_name": team.name}
+            return ujson.dumps(response), 200
+
+        result = Constants.TEAM_NOT_FOUND
+        return ujson.dumps(result['response']), result['http_code']
+
+
+@api.route('/teams/<int:team_id>/players', methods=['GET'])
+def get(team_id):
+    if team_exists(team_id=team_id):
+        team = get_team(team_id=team_id)
+        players = get_all_players(team)
+        response = {'team': team.name, 'players': players}
+        return ujson.dumps(response), 200
     else:
-        description = "Player name not provided"
-
-    response = {
-        "status": status,
-        "description": description
-    }
-    return (ujson.dumps(response), http_code)
+        result = Constants.INVALID_TEAM_ID
+        return ujson.dumps(result['response']), result['http_code']
 
 
-@api.route('/player/<int:id>', methods=['PUT'])
-def update_player(id):
-    player_name = request.values.get("player_name", "")
-    team_id = request.values.get("team_id", "")
-    status = "Failed"
-    http_code = 400
+@api.route('/players', methods=['GET', 'POST'])
+def players():
+    if request.method == 'GET':
+        return ujson.dumps({"players": get_all_players()}), 200
+    elif request.method == 'POST':
+        player_name = request.values.get("player_name", "")
+        team_id = request.values.get("team_id", "")
 
-    # check if player id supplied is valid
-    player_exists = Player.query.filter(Player.id == id).scalar() is not None
-    if player_exists:
-        # check if there's anything to update
-        if player_name or team_id:
+        if player_name:
+            if team_id:
+                if player_exists(player_name=player_name):
+                    result = Constants.DUPLICATE_PLAYER_NAME
+                else:
+                    if team_exists(team_id=team_id):
+                        add_result = add_player(player_name, get_team(team_id=team_id))
+                        if add_result:
+                            result = Constants.CREATE_PLAYER_SUCCESS
+                        else:
+                            result = Constants.CREATE_PLAYER_FAILED
+                    else:
+                        result = Constants.INVALID_TEAM_ID
+            else:
+                result = Constants.MISSING_TEAM_ID
+        else:
+            result = Constants.MISSING_PLAYER_NAME
+        return ujson.dumps(result['response']), result['http_code']
+
+
+@api.route('/players/<int:player_id>', methods=['DELETE', 'GET', 'PUT'])
+def modify_players(player_id):
+    if request.method == 'PUT':
+        player_name = request.values.get("player_name", "")
+        team_id = request.values.get("team_id", "")
+
+        if player_exists(player_id=player_id):
             if player_name:
                 # check if player name is already in the database
-                is_duplicate_player_name = Player.query.filter(Player.name == player_name). \
-                                               filter(Player.id != id).scalar() is not None
-                if is_duplicate_player_name:
-                    response = {
-                        "status": status,
-                        "description": "Player name %s is already in the database" % player_name
-                    }
-                    return (ujson.dumps(response), 409)
-
+                if is_duplicate_player_name(player_id, player_name):
+                    result = Constants.DUPLICATE_PLAYER_NAME
+                    player_name = None
             if team_id:
                 # check if Team id provided is valid
-                is_team_valid = Team.query.filter(Team.id == team_id).scalar() is not None
-                if not is_team_valid:
-                    response = {
-                        "status": status,
-                        "description": "Invalid Team id"
-                    }
-                    return (ujson.dumps(response), http_code)
+                if not team_exists(team_id=team_id):
+                    result = Constants.INVALID_TEAM_ID
+                    team_id = None
 
-                team = Team.query.filter(Team.id == team_id).one()
-
-            player = Player.query.filter(Player.id == id).one()
-            if player_name:
-                player.name = player_name
-            if team_id:
-                player.team = team
-            try:
-                db.session.add(player)
-                db.session.commit()
-                status = "Success",
-                description = "Successfully updated %s" % (player_name)
-                http_code = 201
-            except exc.SQLAlchemyError as e:
-                db.session().rollback()
-                description = "Player %s was not updated due to an error." % player_name
+            if player_name or team_id:
+                update_result = update_player(player_id, player_name, team_id)
+                if update_result:
+                    result = Constants.UPDATE_PLAYER_SUCCESS
+                else:
+                    result = Constants.UPDATE_PLAYER_FAILED
+            else:
+                result = Constants.NOTHING_TO_UPDATE
         else:
-            description = "Nothing to update"
-    else:
-        description = "Invalid Player id"
+            result = Constants.PLAYER_NOT_FOUND
+        return ujson.dumps(result['response']), result['http_code']
+    elif request.method == 'DELETE':
+        result = Constants.DELETE_PLAYER_SUCCESS
+        # only execute delete if player id provided is valid
+        if player_exists(player_id=player_id):
+            delete_result = delete_player(player_id)
+            if not delete_result:
+                result = Constants.DELETE_PLAYER_FAILED
+        return ujson.dumps(result['response']), result['http_code']
+    elif request.method == 'GET':
+        player = get_player(player_id)
+        if player:
+            team = get_team(team_id=player.team_id)
+            response = {"player_id": player.id,
+                        "player_name": player.name,
+                        "team_id": player.team_id,
+                        "team_name": team.name}
+            return ujson.dumps(response), 200
 
-    response = {
-        "status": status,
-        "description": description
-    }
-    return (ujson.dumps(response), http_code)
-
-
-@api.route('/player/<int:id>', methods=['DELETE'])
-def delete_player(id):
-    status = "Success"
-    description = "Successfully deleted player id %s" % id
-    http_code = 204
-
-    # only execute delete if player id provided is valid
-    is_player_id_valid = Player.query.filter(Player.id == id).scalar() is not None
-    if is_player_id_valid:
-        player = Player.query.filter(Player.id == id).one()
-        try:
-            db.session.delete(player)
-            db.session.commit()
-        except exc.SQLAlchemyError as e:
-            db.session().rollback()
-            status = "Failed"
-            description = "Player id %s was not deleted due to an error." % id
-            http_code = 400
-
-    response = {
-        "status": status,
-        "description": description
-    }
-    return (ujson.dumps(response), http_code)
+        result = Constants.PLAYER_NOT_FOUND
+        return ujson.dumps(result['response']), result['http_code']
 
 
 @api.route('/players/free_agent', methods=['GET'])
-def get_free_agents():
-    team = Team.query.filter_by(name='Free Agents').one()
-    players = Player.query.filter(Player.team == team).all()
-    response = []
-
-    if players:
-        for player in players:
-            response.append({"player_id": player.id, "player_name": player.name})
-    return (ujson.dumps({"players": response}), 200)
+def free_agents():
+    result = get_free_agents()
+    return ujson.dumps({"Free Agents": result}), 200
